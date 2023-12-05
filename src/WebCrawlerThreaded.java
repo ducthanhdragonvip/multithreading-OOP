@@ -7,47 +7,47 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
-import java.util.concurrent.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class WebCrawlerMultiThread {
+public class WebCrawlerThreaded {
 
     private Map<String, Integer> visitedUrls;
     private Deque<String> urlsQueue;
     private Instant startTime;
     private final int maxDepth = 4;
     private final int maxUrlsPerPage = 10;
-    private final int numThreads = 4; // Number of threads to use for crawling
+    private final int maxThreads = 5;
 
-    public WebCrawlerMultiThread(Instant start) {
+    public WebCrawlerThreaded(Instant start) {
         visitedUrls = new HashMap<>();
         urlsQueue = new LinkedList<>();
         startTime = start;
     }
 
-    public void crawl(String rootUrl) throws InterruptedException, ExecutionException {
+    public void crawl(String rootUrl) {
         urlsQueue.addLast(rootUrl);
         visitedUrls.put(rootUrl, 1);
-
-        ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
 
         while (!urlsQueue.isEmpty()) {
             String url = urlsQueue.removeFirst();
             int depth = visitedUrls.get(url);
 
             if (depth < maxDepth) {
-                Future<Void> future = executorService.submit(new CrawlTask(url, depth));
-                future.get(); // Wait for the task to complete
+                Thread crawlerThread = new Thread(new CrawlTask(url, depth));
+                crawlerThread.start();
+                try {
+                    crawlerThread.join(); // Wait for the thread to finish before processing the next URL
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
             }
         }
-
-        executorService.shutdown();
     }
 
-    private class CrawlTask implements Callable<Void> {
-        private final String url;
-        private final int depth;
+    private class CrawlTask implements Runnable {
+        private String url;
+        private int depth;
 
         public CrawlTask(String url, int depth) {
             this.url = url;
@@ -55,12 +55,13 @@ public class WebCrawlerMultiThread {
         }
 
         @Override
-        public Void call() throws Exception {
+        public void run() {
             try {
                 URL urlObject = new URL(url);
                 BufferedReader in = new BufferedReader(new InputStreamReader(urlObject.openStream()));
                 String inputLine = in.readLine();
                 String rawHtml = "";
+
                 while (inputLine != null) {
                     rawHtml += inputLine;
                     inputLine = in.readLine();
@@ -69,9 +70,8 @@ public class WebCrawlerMultiThread {
                 in.close();
                 parseAndAddUrls(rawHtml, depth);
             } catch (IOException e) {
-                // Handle exceptions
+                e.printStackTrace();
             }
-            return null;
         }
     }
 
@@ -98,10 +98,10 @@ public class WebCrawlerMultiThread {
         }
     }
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args)  {
         long startTime = System.nanoTime();
         Instant start = Instant.now();
-        WebCrawlerMultiThread crawler = new WebCrawlerMultiThread(start);
+        WebCrawlerThreaded crawler = new WebCrawlerThreaded(start);
         crawler.crawl("https://en.wikipedia.org/wiki/Travelling_salesman_problem");
 
         long endTime = System.nanoTime();
